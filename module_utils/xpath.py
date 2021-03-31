@@ -2,7 +2,7 @@
 # @Author: rjezequel
 # @Date:   2019-12-20 09:18:14
 # @Last Modified by:   ronanjs
-# @Last Modified time: 2020-07-03 16:24:32
+# @Last Modified time: 2020-07-13 15:17:13
 
 try:
     from ansible.module_utils.logger import Logger
@@ -35,12 +35,21 @@ class Linker:
         return selection.firstNode()
 
     def resolveObjects(self, ref, current=None):
-        selection = self._resolve(ref, current)
-        if selection == None or selection.count() == 0:
+        myrefs = re.split(",|;", ref)
+        myselections = NodeSelector()
+        for myref in myrefs:
+            if myref.strip() == "":
+                continue
+            selection = self._resolve(myref, current)
+            if selection != None and selection.count() > 0:
+                myselections.extendex(selection)
+        if myselections.count() == 0:
             return None
-        return selection
+        return myselections
 
     def _resolve(self, ref, current=None):
+        if ref == None:
+            return None
 
         if ref[0:4] == "ref:":
             ref = ref[4:]
@@ -141,8 +150,11 @@ class Linker:
 
 class NodeSelector:
 
-    def __init__(self, node):
-        self.nodes = [node]
+    def __init__(self, node=None):
+        if node == None:
+            self.nodes = []
+        else:
+            self.nodes = [node]
 
     def log(self, m):
         log.debug("[selector] " + m)
@@ -170,6 +182,38 @@ class NodeSelector:
 
         self.nodes = selector.filterNodes(self.nodes)
         return len(self.nodes)
+
+    def isDifferent(self, other):
+        if other != None:
+            if self.nodes == other.nodes:
+                return False
+            if len(other.nodes) == 0:
+                return len(self.nodes) > 0
+
+            for n in other.nodes:
+                if n not in self.nodes:
+                    return True
+            return False
+        return True
+
+    def extend(self, other):
+        if other != None:
+            for n in other.nodes:
+                if n not in self.nodes:
+                    self.nodes.append(n)
+
+    def extendex(self, other):
+        if other != None:
+            for n in other.nodes:
+                self.nodes.append(n)
+
+    def intersect(self, other):
+        new = NodeSelector()
+        if other != None:
+            for n in other.nodes:
+                if n in self.nodes:
+                    new.nodes.append(n)
+        return new
 
 
 class Selector:
@@ -256,6 +300,8 @@ class Selector:
                 selection.append(node)
 
         log.debug("Selector: candidates are %s" % [str(n) for n in selection])
+        # sort handles to get correct order
+        selection.sort(key=lambda n: n.handle)
 
         for selector in self.selectors:
 
@@ -286,9 +332,10 @@ class Selector:
         value = str(attr[attrKey]).lower()
         if selector["type"] == Selector.equal:
             if attr["object_type"] == "port":
-                isValid = ((value == selectorValue) or (re.sub(r"\s//.*", "", value)== re.sub(r"\s//.*", "", selectorValue)))
+                isValid = ((value == selectorValue) or
+                           (re.sub(r"\s//.*", "", value) == re.sub(r"\s//.*", "", selectorValue)))
             else:
-                isValid = (value == selectorValue) 
+                isValid = (value == selectorValue)
 
         elif selector["type"] == Selector.different:
 
